@@ -66,7 +66,9 @@ Vast.ai RTX 5090 / CUDA 13.2 guide: [`docs/VAST-RTX5090-CUDA13-GUIDE.md`](docs/V
 ```bash
 npm run status   # read-only contract/gas/price/wallet status
 npm run bench    # local JS CPU keccak benchmark
-npm run mine     # proof search; only sends tx if RUN_TX=true
+npm run mine     # proof search; uses RUN_TX from .env
+npm run mine:dry # force dry-run, overrides .env RUN_TX
+npm run mine:live # force LIVE mainnet tx mode, overrides .env RUN_TX
 npm run check    # syntax checks
 npm run build:cuda # optional: compile CUDA backend with nvcc
 ```

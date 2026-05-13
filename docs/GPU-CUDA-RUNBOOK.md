@@ -223,6 +223,8 @@ Run:
 
 ```bash
 npm run mine
+# or force live mode regardless of .env RUN_TX:
+npm run mine:live
 ```
 
 Expected log includes:

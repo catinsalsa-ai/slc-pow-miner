@@ -13,7 +13,7 @@ function numEnv(name, fallback) {
 function boolEnv(name, fallback = false) {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
+  return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
 }
 
 const budgetEth = numEnv('BUDGET_ETH', 0.003);
@@ -32,7 +32,7 @@ export const config = {
   cudaBatch: Math.max(1024, Math.floor(numEnv('CUDA_BATCH', 4_194_304))),
   anchorRefreshBlocks: Math.max(1, Math.floor(numEnv('ANCHOR_REFRESH_BLOCKS', 20))),
   report: (process.env.REPORT || 'off').toLowerCase(),
-  minerName: process.env.MINER_NAME || 'slc-miner',
+  minerName: (process.env.MINER_NAME || 'slc-miner').trim(),
 };
 
 export function requireBurnerKey() {

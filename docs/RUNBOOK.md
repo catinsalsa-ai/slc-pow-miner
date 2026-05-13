@@ -197,6 +197,8 @@ Then run:
 
 ```bash
 npm run mine
+# or force live mode regardless of .env RUN_TX:
+npm run mine:live
 ```
 
 Dry-run mode searches for valid nonces but refuses to send `commit()` / `reveal()` transactions.

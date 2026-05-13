@@ -347,7 +347,7 @@ Checklist:
 
 - [ ] `npm run build:cuda` succeeded
 - [ ] `npm run status` works
-- [ ] dry-run `npm run mine` shows `cuda/NVIDIA GeForce RTX 5090`
+- [ ] dry-run `npm run mine` or `npm run mine:dry` shows `cuda/NVIDIA GeForce RTX 5090`
 - [ ] burner wallet only
 - [ ] wallet has small ETH amount
 - [ ] `BUDGET_ETH` is small
@@ -360,11 +360,13 @@ Enable live TX:
 RUN_TX=true
 ```
 
-Start:
+Start live mode directly:
 
 ```bash
-npm run mine
+npm run mine:live
 ```
+
+`npm run mine:live` forces `RUN_TX=true` for that command, so it avoids mistakes where `.env` still has `RUN_TX=false` or trailing spaces. If you prefer using `.env`, set `RUN_TX=true` then run `npm run mine`.
 
 The miner still refuses/waits when:
 
@@ -462,6 +464,26 @@ Do not add old flags like:
 
 ```text
 -arch=sm_70
+```
+
+### Log still says `RUN_TX=false`
+
+If you expected live mode but the log says:
+
+```text
+RUN_TX=false — dry-run search only, NO TX will be sent
+```
+
+then `.env` is still false or not saved. Use the force-live command:
+
+```bash
+npm run mine:live
+```
+
+Expected live log:
+
+```text
+RUN_TX=true — LIVE MAINNET TX ENABLED
 ```
 
 ### `PRIVATE_KEY missing`
