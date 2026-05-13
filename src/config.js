@@ -30,6 +30,7 @@ export const config = {
   batchSize: Math.max(1000, Math.floor(numEnv('BATCH_SIZE', 50000))),
   gpu: boolEnv('GPU', false),
   cudaBatch: Math.max(1024, Math.floor(numEnv('CUDA_BATCH', 4_194_304))),
+  logEverySec: Math.max(1, Math.floor(numEnv('LOG_EVERY_SEC', 5))),
   anchorRefreshBlocks: Math.max(1, Math.floor(numEnv('ANCHOR_REFRESH_BLOCKS', 20))),
   report: (process.env.REPORT || 'off').toLowerCase(),
   minerName: (process.env.MINER_NAME || 'slc-miner').trim(),

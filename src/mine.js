@@ -7,6 +7,38 @@ import { cudaAvailable, cudaSearchOnce } from './cuda.js';
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function short(x) { return `${String(x).slice(0,10)}…${String(x).slice(-6)}`; }
+function nowTime() { return new Date().toLocaleTimeString('en-GB', { hour12: false }); }
+function fmtHashrate(hps) {
+  if (!Number.isFinite(hps) || hps <= 0) return '0 H/s';
+  if (hps >= 1e9) return `${(hps / 1e9).toFixed(2)} GH/s`;
+  if (hps >= 1e6) return `${(hps / 1e6).toFixed(1)} MH/s`;
+  if (hps >= 1e3) return `${(hps / 1e3).toFixed(1)} KH/s`;
+  return `${Math.round(hps)} H/s`;
+}
+function fmtCount(n) {
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n >= 1e12) return `${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return String(Math.round(n));
+}
+function printBanner(wallet, budgetLabel, workerLabel) {
+  console.log('');
+  console.log('SLC CUDA Miner');
+  console.log('────────────────────────────────────────');
+  console.log(`Wallet      : ${wallet}`);
+  console.log(`Mode        : ${config.runTx ? 'LIVE MAINNET TX ENABLED' : 'DRY-RUN / no TX'}`);
+  console.log(`Backend     : ${config.gpu ? 'CUDA primary' : 'CPU only'}`);
+  console.log(`Budget      : ${budgetLabel}`);
+  console.log(`Gas cap     : ${config.maxGasGwei} gwei | priority ${config.priorityFeeGwei} gwei`);
+  console.log(`CUDA batch  : ${config.cudaBatch}`);
+  console.log(`CPU fallback: ${workerLabel}`);
+  console.log(`Log every   : ${config.logEverySec}s`);
+  console.log('────────────────────────────────────────');
+  if (config.runTx) console.log('⚠️  Live mode aktif: TX beneran dikirim kalau nonce valid ketemu.');
+  console.log('');
+}
 
 async function searchOnce({ ch, target, miner }) {
   if (config.gpu) {
@@ -62,11 +94,15 @@ async function main() {
   const wallet = new ethers.Wallet(pk, p);
   const c = contract(wallet);
   const startEth = await p.getBalance(wallet.address);
-  console.log(`SLC miner MVP starting for ${wallet.address}`);
-  console.log(`RUN_TX=${config.runTx} — ${config.runTx ? 'LIVE MAINNET TX ENABLED' : 'dry-run search only, NO TX will be sent'}`);
   const budgetLabel = config.budgetCapEnabled ? `${config.budgetEth} ETH` : 'unlimited (BUDGET_ETH=0)';
-  const workerLabel = `${config.workers || Math.max(1, os.cpus().length - 1)} CPU fallback`;
-  console.log(`Budget=${budgetLabel} MaxGas=${config.maxGasGwei} gwei Batch=${config.batchSize} Workers=${workerLabel} GPU=${config.gpu ? 'cuda' : 'off'} CudaBatch=${config.cudaBatch}`);
+  const workerLabel = `${config.workers || Math.max(1, os.cpus().length - 1)} workers`;
+  printBanner(wallet.address, budgetLabel, workerLabel);
+
+  let statRounds = 0;
+  let statHashes = 0;
+  let statStart = Date.now();
+  let lastBlock = 0;
+  let lastBackend = config.gpu ? 'cuda' : 'cpu';
 
   while (true) {
     const gas = await gasSnapshot(p);
@@ -91,14 +127,26 @@ async function main() {
     }
     const block = await p.getBlock('latest');
     const ch = makeChallenge(block.hash, params.epochSeed);
-    process.stdout.write(`[search] block=${block.number} epoch=${params.epoch} reward=${ethers.formatUnits(params.reward,18)} gas=${fmtGwei(gas.gasPrice)}gwei ... `);
     const result = await searchOnce({ ch, target: params.target, miner: wallet.address });
+    const backend = result.backend ? `${result.backend}${result.device ? `/${result.device}` : ''}` : 'cpu';
+    lastBackend = backend;
+    statRounds += 1;
+    statHashes += Number(result.tried || config.cudaBatch || 0);
+    const elapsed = Math.max(0.001, (Date.now() - statStart) / 1000);
+    const shouldLog = result.found || elapsed >= config.logEverySec || block.number !== lastBlock;
+    if (shouldLog) {
+      const hps = statHashes / elapsed;
+      const status = result.found ? '🎯 FOUND' : '⛏️  mining';
+      console.log(`[${nowTime()}] ${status} | block=${block.number} epoch=${params.epoch} | ${fmtHashrate(hps)} | tried=${fmtCount(statHashes)} / ${statRounds} rounds | gas=${fmtGwei(gas.gasPrice)} gwei | ${lastBackend}`);
+      statRounds = 0;
+      statHashes = 0;
+      statStart = Date.now();
+      lastBlock = block.number;
+    }
     if (!result.found) {
-      const backend = result.backend ? `${result.backend}${result.device ? `/${result.device}` : ''}` : 'cpu';
-      console.log(`no hit (${Math.round(result.hps || 0)} h/s approx, ${backend})`);
       continue;
     }
-    console.log(`FOUND nonce=${result.nonce} hash=${short(result.hash)}`);
+    console.log(`[found] nonce=${result.nonce} hash=${short(result.hash)}`);
 
     // Re-read params to avoid spending gas on stale epoch/target.
     const fresh = await mineParams(c);

@@ -96,3 +96,8 @@ See [`ROADMAP.md`](ROADMAP.md).
 ## License
 
 MIT
+
+
+### Cleaner logs
+
+Set `LOG_EVERY_SEC=5` in `.env` to print one aggregated mining status line every 5 seconds instead of one line per CUDA batch. Increase to `10` for quieter tmux logs.

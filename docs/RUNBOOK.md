@@ -429,3 +429,14 @@ If CUDA says `nvcc not found`, install CUDA Toolkit or use a GPU image that alre
 Never commit `.env`. It is ignored by `.gitignore`.
 
 Before pushing any changes, scan for real secrets with a trusted scanner or a local grep pattern. If anything suspicious prints, do not push.
+
+
+## Cleaner logs
+
+The miner aggregates fast CUDA batches and prints one status line every few seconds. Configure it in `.env`:
+
+```env
+LOG_EVERY_SEC=5
+```
+
+Use `LOG_EVERY_SEC=10` for quieter tmux logs, or `LOG_EVERY_SEC=1` if you want faster visual feedback. Mining speed is unchanged; only terminal output is throttled.

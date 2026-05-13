@@ -583,3 +583,14 @@ WORKERS=48
 ```
 
 For pure CUDA runs, the important setting is still `CUDA_BATCH`, not `WORKERS`.
+
+
+## Cleaner logs
+
+The miner aggregates fast CUDA batches and prints one status line every few seconds. Configure it in `.env`:
+
+```env
+LOG_EVERY_SEC=5
+```
+
+Use `LOG_EVERY_SEC=10` for quieter tmux logs, or `LOG_EVERY_SEC=1` if you want faster visual feedback. Mining speed is unchanged; only terminal output is throttled.
