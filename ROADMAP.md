@@ -19,10 +19,11 @@
 
 ## Phase 3 — GPU mining
 
+- [x] CUDA backend for NVIDIA VPS
+- [x] GPU self-test at build time
+- [x] Auto fallback: CUDA > JS CPU workers
 - [ ] OpenCL backend
-- [ ] CUDA backend for NVIDIA VPS
-- [ ] GPU self-test at startup
-- [ ] Auto backend selection: CUDA > OpenCL > native CPU > JS
+- [ ] Runtime GPU benchmark/status panel
 
 ## Phase 4 — Production transaction strategy
 

@@ -1,14 +1,15 @@
 {
   "name": "slc-pow-miner",
   "version": "0.1.0",
-  "description": "CPU-safe Silicoin/SLC proof-of-work miner built from public SKILL.md spec",
+  "description": "Safe-first Silicoin/SLC proof-of-work miner with CPU fallback and optional CUDA backend",
   "type": "module",
   "private": true,
   "scripts": {
     "status": "node src/status.js",
     "mine": "node src/mine.js",
     "bench": "node src/bench.js",
-    "check": "node --check src/config.js && node --check src/slc.js && node --check src/status.js && node --check src/mine.js && node --check src/worker.js && node --check src/bench.js"
+    "check": "node --check src/config.js && node --check src/slc.js && node --check src/status.js && node --check src/mine.js && node --check src/worker.js && node --check src/bench.js && node --check src/cuda.js",
+    "build:cuda": "bash native/build_cuda.sh"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

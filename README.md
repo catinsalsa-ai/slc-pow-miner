@@ -12,6 +12,7 @@ The upstream public repo currently ships `SKILL.md` but not the referenced `mine
 - Reads `mineParams()`, reward, total mined, gas, and DEX Screener price
 - Optional wallet ETH/SLC balance check from local `.env`
 - CPU JavaScript proof search using Node worker threads
+- Optional CUDA backend for NVIDIA VPS/RTX via `bin/slc-cuda`
 - Commit/reveal implementation based on the public skill spec
 - Gas cap via `MAX_GAS_GWEI`
 - Session spend cap via `BUDGET_ETH`
@@ -46,6 +47,9 @@ cp .env.example .env
 nano .env
 npm run status
 npm run bench
+# Optional NVIDIA/CUDA path:
+# npm run build:cuda
+# set GPU=true in .env
 npm run mine
 ```
 
@@ -60,15 +64,16 @@ npm run status   # read-only contract/gas/price/wallet status
 npm run bench    # local JS CPU keccak benchmark
 npm run mine     # proof search; only sends tx if RUN_TX=true
 npm run check    # syntax checks
+npm run build:cuda # optional: compile CUDA backend with nvcc
 ```
 
 ## Current limitations
 
-This MVP uses pure JavaScript CPU hashing. It is useful for validation and small-scale testing, but serious mining needs a faster backend:
+This repo now includes a CUDA backend scaffold for NVIDIA VPS/RTX machines. The default remains CPU/dry-run for safety. Serious production mining still needs more work around builder bundles and exact commit/reveal targeting.
 
-- Native Rust/N-API keccak backend
-- OpenCL GPU backend
-- CUDA GPU backend
+- CUDA GPU backend: included as `native/cuda_miner.cu`, build with `npm run build:cuda`
+- Native Rust/N-API keccak backend: still planned as a CPU speed path
+- OpenCL GPU backend: still planned as cross-vendor fallback
 - Builder bundle support for exact commit/reveal block targeting
 
 See [`ROADMAP.md`](ROADMAP.md).

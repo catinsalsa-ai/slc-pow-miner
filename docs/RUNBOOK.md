@@ -90,6 +90,11 @@ BATCH_SIZE=50000
 ANCHOR_REFRESH_BLOCKS=20
 REPORT=off
 MINER_NAME=maulana-vps
+
+# Optional NVIDIA CUDA backend
+GPU=false
+CUDA_BATCH=4194304
+CUDA_MINER_BIN=
 ```
 
 ### Private key rule
@@ -147,11 +152,35 @@ For mining, a paid/private Alchemy, Infura, QuickNode, or own node RPC is better
 
 ## 5. Benchmark
 
+CPU benchmark:
+
 ```bash
 npm run bench
 ```
 
-This MVP is pure JS CPU hashing, so it will be slow compared to native/GPU mining.
+Optional CUDA build for NVIDIA VPS/RTX:
+
+```bash
+nvidia-smi
+nvcc --version
+npm run build:cuda
+```
+
+If `nvcc` is missing, install CUDA Toolkit for your VPS image first. On many GPU VPS images, the NVIDIA driver exists but the compiler is not installed.
+
+Enable CUDA in `.env` only after the build passes:
+
+```env
+GPU=true
+CUDA_BATCH=4194304
+```
+
+Notes:
+
+- `bin/slc-cuda` is ignored by git because it is a compiled binary.
+- The Node wrapper CPU-verifies any CUDA-found nonce before transaction logic.
+- If CUDA fails at runtime, the miner logs the error and falls back to CPU workers.
+- `RUN_TX=false` still means no transaction, even with CUDA enabled.
 
 ## 6. Dry-run mining, no transaction
 
@@ -314,11 +343,32 @@ Cross-platform GPU path:
 
 ### CUDA backend
 
-Best NVIDIA path:
+Best NVIDIA path and now included in this repo:
 
-- Highest hashrate.
-- Needs CUDA toolkit and NVIDIA driver.
-- Best for RTX VPS/GPU machines.
+```bash
+npm run build:cuda
+```
+
+Then edit `.env`:
+
+```env
+GPU=true
+CUDA_BATCH=4194304
+```
+
+Run dry first:
+
+```bash
+RUN_TX=false npm run mine
+```
+
+The CUDA helper searches uint64 nonce ranges for:
+
+```text
+keccak256(bytes32 challenge ++ address miner ++ uint256 nonce) < target
+```
+
+The Node process still handles all RPC/gas/commit/reveal logic and verifies the CUDA result with ethers before any TX path.
 
 ### Builder bundles
 
@@ -348,7 +398,15 @@ RUN_TX=true
 
 ### Low hashrate
 
-Expected for this MVP. Use native/GPU backend for serious mining.
+If CPU hashrate is low, use the CUDA backend on NVIDIA VPS:
+
+```bash
+npm run build:cuda
+# then set GPU=true in .env
+npm run mine
+```
+
+If CUDA says `nvcc not found`, install CUDA Toolkit or use a GPU image that already includes it. If it says `bin/slc-cuda not found`, run `npm run build:cuda`.
 
 ## 12. Security reminder
 

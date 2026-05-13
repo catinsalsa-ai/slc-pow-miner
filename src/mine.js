@@ -3,11 +3,26 @@ import { Worker } from 'worker_threads';
 import { ethers } from 'ethers';
 import { config, requireBurnerKey } from './config.js';
 import { provider, contract, mineParams, gasSnapshot, challenge as makeChallenge, commitment as makeCommitment, fmtGwei, fmtEth } from './slc.js';
+import { cudaAvailable, cudaSearchOnce } from './cuda.js';
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function short(x) { return `${String(x).slice(0,10)}…${String(x).slice(-6)}`; }
 
 async function searchOnce({ ch, target, miner }) {
+  if (config.gpu) {
+    if (cudaAvailable()) {
+      try {
+        return await cudaSearchOnce({ ch, target, miner });
+      } catch (err) {
+        console.log(`\n[cuda] failed: ${err.message}`);
+        console.log('[cuda] falling back to CPU workers for this round');
+      }
+    } else {
+      console.log('\n[cuda] GPU=1 but bin/slc-cuda not found. Run: npm run build:cuda');
+      console.log('[cuda] falling back to CPU workers for this round');
+    }
+  }
+
   const workers = config.workers || Math.max(1, os.cpus().length - 1);
   const randomBase = BigInt('0x' + Buffer.from(ethers.randomBytes(16)).toString('hex'));
   const batchPerWorker = config.batchSize;
@@ -49,7 +64,7 @@ async function main() {
   const startEth = await p.getBalance(wallet.address);
   console.log(`SLC miner MVP starting for ${wallet.address}`);
   console.log(`RUN_TX=${config.runTx} — ${config.runTx ? 'LIVE MAINNET TX ENABLED' : 'dry-run search only, NO TX will be sent'}`);
-  console.log(`Budget=${config.budgetEth} ETH MaxGas=${config.maxGasGwei} gwei Batch=${config.batchSize} Workers=${config.workers || Math.max(1, os.cpus().length - 1)}`);
+  console.log(`Budget=${config.budgetEth} ETH MaxGas=${config.maxGasGwei} gwei Batch=${config.batchSize} Workers=${config.workers || Math.max(1, os.cpus().length - 1)} GPU=${config.gpu ? 'cuda' : 'off'} CudaBatch=${config.cudaBatch}`);
 
   while (true) {
     const gas = await gasSnapshot(p);
@@ -75,7 +90,8 @@ async function main() {
     process.stdout.write(`[search] block=${block.number} epoch=${params.epoch} reward=${ethers.formatUnits(params.reward,18)} gas=${fmtGwei(gas.gasPrice)}gwei ... `);
     const result = await searchOnce({ ch, target: params.target, miner: wallet.address });
     if (!result.found) {
-      console.log(`no hit (${Math.round(result.hps || 0)} h/s approx)`);
+      const backend = result.backend ? `${result.backend}${result.device ? `/${result.device}` : ''}` : 'cpu';
+      console.log(`no hit (${Math.round(result.hps || 0)} h/s approx, ${backend})`);
       continue;
     }
     console.log(`FOUND nonce=${result.nonce} hash=${short(result.hash)}`);
