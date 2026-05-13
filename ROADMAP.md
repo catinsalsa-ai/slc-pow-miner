@@ -20,6 +20,8 @@
 ## Phase 3 — GPU mining
 
 - [x] CUDA backend for NVIDIA VPS
+- [x] CUDA persistent worker v2
+- [x] Optimized CUDA Keccak message-lane setup
 - [x] GPU self-test at build time
 - [x] Auto fallback: CUDA > JS CPU workers
 - [ ] OpenCL backend
@@ -30,7 +32,7 @@
 - [ ] Builder bundle support for exact commit/reveal block targeting
 - [ ] Better nonce management and receipt polling
 - [ ] Reorg/missed reveal handling
-- [ ] Optional dashboard telemetry, still off by default
+- [x] Optional dashboard telemetry, still off by default
 
 ## Phase 5 — Ops
 

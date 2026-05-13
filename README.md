@@ -118,6 +118,8 @@ npm run mine:v2:turbo  # live mode, persistent CUDA worker, CUDA_BATCH=536870912
 
 Start with `mine:v2`. If gas/block conditions are stable and the VPS is healthy, try `mine:v2:turbo`. The v2 mode keeps the CUDA helper alive between rounds, reducing process spawn/init overhead. Larger batches make GPU utilization more visible and reduce wrapper/RPC overhead, but they can waste more work if the block/epoch changes mid-batch.
 
+Kernel optimization note: the CUDA helper precomputes static Keccak lanes per challenge and only injects nonce lanes inside the hot kernel loop. This reduces per-thread message-buffer setup versus the original MVP kernel.
+
 To show up on the official dashboard, set `REPORT=on` in `.env`; the miner reports every ~60s and once after a successful reveal.
 
 Monitor with:

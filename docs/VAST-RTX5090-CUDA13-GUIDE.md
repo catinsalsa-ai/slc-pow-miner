@@ -618,3 +618,8 @@ npm run mine:v2:turbo
 ```bash
 nvidia-smi dmon -s pucvmet -d 1
 ```
+
+
+### CUDA kernel optimization note
+
+The v2 CUDA helper also optimizes the hot Keccak path: static lanes from `challenge + miner + padding` are built once per job, then the kernel only updates the nonce lanes for each thread. This reduces local message-buffer work per nonce. Node still CPU-verifies any found nonce before sending TX.

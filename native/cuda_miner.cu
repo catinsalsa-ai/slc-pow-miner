@@ -56,7 +56,7 @@ __device__ void keccakf(uint64_t st[25]) {
   }
 }
 
-__device__ __forceinline__ uint64_t load64_le(const uint8_t *p) {
+__host__ __device__ __forceinline__ uint64_t load64_le(const uint8_t *p) {
   uint64_t x = 0;
   #pragma unroll
   for (int i = 0; i < 8; i++) x |= ((uint64_t)p[i]) << (8 * i);
@@ -77,46 +77,82 @@ __device__ __forceinline__ bool hash_lt_target(const uint8_t hash[32], const uin
   return false;
 }
 
-__device__ void slc_hash(const uint8_t challenge[32], const uint8_t miner[20], uint64_t nonce, uint8_t out[32]) {
-  uint8_t msg[RATE];
-  #pragma unroll
-  for (int i = 0; i < RATE; i++) msg[i] = 0;
-  #pragma unroll
-  for (int i = 0; i < 32; i++) msg[i] = challenge[i];
-  #pragma unroll
-  for (int i = 0; i < 20; i++) msg[32 + i] = miner[i];
-  // Solidity uint256 is 32-byte big-endian. We only search the low uint64 space here.
-  #pragma unroll
-  for (int i = 0; i < 24; i++) msg[52 + i] = 0;
-  #pragma unroll
-  for (int i = 0; i < 8; i++) msg[76 + i] = (uint8_t)(nonce >> (8 * (7 - i)));
-  msg[MSG_LEN] = 0x01;     // Ethereum Keccak padding, not NIST SHA3 0x06.
-  msg[RATE - 1] |= 0x80;
+__host__ __device__ __forceinline__ uint64_t nonce_lane9(uint64_t nonce) {
+  // msg[72..75] = 0, msg[76..79] = high 32 bits of uint64 nonce in big-endian order.
+  return ((nonce >> 56) << 32) | (((nonce >> 48) & 0xffULL) << 40) |
+         (((nonce >> 40) & 0xffULL) << 48) | (((nonce >> 32) & 0xffULL) << 56);
+}
 
-  uint64_t st[25];
+__host__ __device__ __forceinline__ uint64_t nonce_lane10(uint64_t nonce) {
+  // msg[80..83] = low 32 bits of uint64 nonce in big-endian order, msg[84] = Keccak pad 0x01.
+  return (((nonce >> 24) & 0xffULL) << 0) | (((nonce >> 16) & 0xffULL) << 8) |
+         (((nonce >> 8) & 0xffULL) << 16) | ((nonce & 0xffULL) << 24) |
+         (0x01ULL << 32);
+}
+
+__device__ __forceinline__ bool hash_words_lt_target(const uint64_t st[25], const uint8_t target[32]) {
+  // Keccak output is little-endian lanes. Compare as bytes32/big-endian without materializing hash bytes.
   #pragma unroll
-  for (int i = 0; i < 25; i++) st[i] = 0;
-  #pragma unroll
-  for (int i = 0; i < RATE / 8; i++) st[i] ^= load64_le(msg + i * 8);
-  keccakf(st);
+  for (int lane = 0; lane < 4; lane++) {
+    uint64_t w = st[lane];
+    #pragma unroll
+    for (int b = 0; b < 8; b++) {
+      uint8_t hb = (uint8_t)(w >> (8 * b));
+      uint8_t tb = target[lane * 8 + b];
+      if (hb < tb) return true;
+      if (hb > tb) return false;
+    }
+  }
+  return false;
+}
+
+__device__ __forceinline__ void store_hash_words(uint8_t *out, const uint64_t st[25]) {
   #pragma unroll
   for (int i = 0; i < 4; i++) store64_le(out + i * 8, st[i]);
 }
 
-__global__ void mine_kernel(const uint8_t *challenge, const uint8_t *miner, const uint8_t *target,
+__device__ __forceinline__ bool slc_hash_beats_target_fast(const uint64_t prefix[17], uint64_t nonce, const uint8_t target[32]) {
+  uint64_t st[25];
+  #pragma unroll
+  for (int i = 0; i < 25; i++) st[i] = 0;
+
+  // Static lanes are precomputed once per job on the CPU. Only lanes 9 and 10 change per nonce.
+  #pragma unroll
+  for (int i = 0; i < 9; i++) st[i] = prefix[i];
+  st[9] = nonce_lane9(nonce);
+  st[10] = nonce_lane10(nonce);
+  #pragma unroll
+  for (int i = 11; i < 17; i++) st[i] = prefix[i];
+
+  keccakf(st);
+  return hash_words_lt_target(st, target);
+}
+
+__device__ __forceinline__ void slc_hash_fast(const uint64_t prefix[17], uint64_t nonce, uint8_t out[32]) {
+  uint64_t st[25];
+  #pragma unroll
+  for (int i = 0; i < 25; i++) st[i] = 0;
+  #pragma unroll
+  for (int i = 0; i < 9; i++) st[i] = prefix[i];
+  st[9] = nonce_lane9(nonce);
+  st[10] = nonce_lane10(nonce);
+  #pragma unroll
+  for (int i = 11; i < 17; i++) st[i] = prefix[i];
+  keccakf(st);
+  store_hash_words(out, st);
+}
+
+__global__ void mine_kernel(const uint64_t *prefix, const uint8_t *target,
                             uint64_t start, uint64_t total, unsigned int *found, uint64_t *found_nonce, uint8_t *found_hash) {
   uint64_t tid = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
   uint64_t stride = (uint64_t)blockDim.x * gridDim.x;
-  uint8_t h[32];
   for (uint64_t idx = tid; idx < total; idx += stride) {
     if (atomicAdd(found, 0U) != 0U) return;
     uint64_t nonce = start + idx;
-    slc_hash(challenge, miner, nonce, h);
-    if (hash_lt_target(h, target)) {
+    if (slc_hash_beats_target_fast(prefix, nonce, target)) {
       if (atomicCAS(found, 0U, 1U) == 0U) {
         *found_nonce = nonce;
-        #pragma unroll
-        for (int i = 0; i < 32; i++) found_hash[i] = h[i];
+        slc_hash_fast(prefix, nonce, found_hash);
       }
       return;
     }
@@ -124,8 +160,7 @@ __global__ void mine_kernel(const uint8_t *challenge, const uint8_t *miner, cons
 }
 
 struct CudaContext {
-  uint8_t *d_challenge;
-  uint8_t *d_miner;
+  uint64_t *d_prefix;
   uint8_t *d_target;
   uint8_t *d_hash;
   unsigned int *d_found;
@@ -169,8 +204,7 @@ static int init_cuda(CudaContext *ctx) {
   ctx->blocks = ctx->prop.multiProcessorCount * 128;
   if (ctx->blocks < 128) ctx->blocks = 128;
 
-  cudaMalloc(&ctx->d_challenge, 32);
-  cudaMalloc(&ctx->d_miner, 20);
+  cudaMalloc(&ctx->d_prefix, 17 * sizeof(uint64_t));
   cudaMalloc(&ctx->d_target, 32);
   cudaMalloc(&ctx->d_hash, 32);
   cudaMalloc(&ctx->d_found, sizeof(unsigned int));
@@ -181,28 +215,42 @@ static int init_cuda(CudaContext *ctx) {
 }
 
 static void free_cuda(CudaContext *ctx) {
-  if (ctx->d_challenge) cudaFree(ctx->d_challenge);
-  if (ctx->d_miner) cudaFree(ctx->d_miner);
+  if (ctx->d_prefix) cudaFree(ctx->d_prefix);
   if (ctx->d_target) cudaFree(ctx->d_target);
   if (ctx->d_hash) cudaFree(ctx->d_hash);
   if (ctx->d_found) cudaFree(ctx->d_found);
   if (ctx->d_nonce) cudaFree(ctx->d_nonce);
 }
 
+static void build_prefix(const uint8_t challenge[32], const uint8_t miner[20], uint64_t prefix[17]) {
+  uint8_t msg[RATE];
+  memset(msg, 0, sizeof(msg));
+  memcpy(msg, challenge, 32);
+  memcpy(msg + 32, miner, 20);
+  msg[MSG_LEN] = 0x01;     // Ethereum Keccak padding, not NIST SHA3 0x06.
+  msg[RATE - 1] |= 0x80;
+
+  for (int i = 0; i < RATE / 8; i++) prefix[i] = load64_le(msg + i * 8);
+  // Lanes 9 and 10 are overwritten inside the kernel for each nonce.
+  prefix[9] = 0;
+  prefix[10] = 0x01ULL << 32;
+}
+
 static int run_job(CudaContext *ctx, const char *challenge_hex, const char *miner_hex, const char *target_hex,
                    uint64_t start, uint64_t batch) {
   uint8_t h_challenge[32], h_miner[20], h_target[32], h_hash[32];
+  uint64_t h_prefix[17];
   if (!parse_hex(challenge_hex, h_challenge, 32) || !parse_hex(miner_hex, h_miner, 20) || !parse_hex(target_hex, h_target, 32)) {
     fprintf(stdout, "{\"type\":\"error\",\"error\":\"invalid hex input\"}\n");
     fflush(stdout);
     return 2;
   }
   if (batch == 0) batch = 4194304ULL;
+  build_prefix(h_challenge, h_miner, h_prefix);
 
   unsigned int h_found = 0;
   uint64_t h_nonce = 0;
-  cudaMemcpy(ctx->d_challenge, h_challenge, 32, cudaMemcpyHostToDevice);
-  cudaMemcpy(ctx->d_miner, h_miner, 20, cudaMemcpyHostToDevice);
+  cudaMemcpy(ctx->d_prefix, h_prefix, 17 * sizeof(uint64_t), cudaMemcpyHostToDevice);
   cudaMemcpy(ctx->d_target, h_target, 32, cudaMemcpyHostToDevice);
   cudaMemset(ctx->d_found, 0, sizeof(unsigned int));
 
@@ -210,7 +258,7 @@ static int run_job(CudaContext *ctx, const char *challenge_hex, const char *mine
   cudaEventCreate(&ev_start);
   cudaEventCreate(&ev_stop);
   cudaEventRecord(ev_start);
-  mine_kernel<<<ctx->blocks, ctx->threads>>>(ctx->d_challenge, ctx->d_miner, ctx->d_target, start, batch, ctx->d_found, ctx->d_nonce, ctx->d_hash);
+  mine_kernel<<<ctx->blocks, ctx->threads>>>(ctx->d_prefix, ctx->d_target, start, batch, ctx->d_found, ctx->d_nonce, ctx->d_hash);
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) { fprintf(stderr, "kernel launch failed: %s\n", cudaGetErrorString(err)); return 4; }
   err = cudaDeviceSynchronize();
