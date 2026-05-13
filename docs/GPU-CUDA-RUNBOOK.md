@@ -479,3 +479,24 @@ Use `LOG_EVERY_SEC=10` for quieter tmux logs, or `LOG_EVERY_SEC=1` if you want f
 
 
 Note: The status line shows `gpu=` for CUDA kernel speed and `loop=` for end-to-end speed including RPC, process startup, and contract reads.
+
+
+## Maximize GPU usage
+
+If `nvidia-smi` shows 0% GPU while logs say `cuda/NVIDIA ...`, the CUDA kernel is probably finishing too fast between dashboard samples. Use a larger batch convenience script:
+
+```bash
+npm run mine:max
+```
+
+This forces `RUN_TX=true GPU=true CUDA_BATCH=268435456 LOG_EVERY_SEC=5`. On RTX 5090 this keeps the kernel running around ~1s per batch instead of a few milliseconds. If stable, try:
+
+```bash
+npm run mine:turbo
+```
+
+`mine:turbo` uses `CUDA_BATCH=536870912` and can make utilization more visible, but it may waste more work if the block/epoch changes mid-batch. For monitoring:
+
+```bash
+nvidia-smi dmon -s pucvmet -d 1
+```

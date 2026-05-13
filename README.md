@@ -104,3 +104,20 @@ Set `LOG_EVERY_SEC=5` in `.env` to print one aggregated mining status line every
 
 
 Note: The status line shows `gpu=` for CUDA kernel speed and `loop=` for end-to-end speed including RPC, process startup, and contract reads.
+
+### RTX 5090 max modes
+
+For short CUDA batches, GPU dashboards can show 0% because the kernel finishes in milliseconds. Use larger batch scripts to keep the GPU busy longer:
+
+```bash
+npm run mine:max    # live mode, GPU=true, CUDA_BATCH=268435456
+npm run mine:turbo  # live mode, GPU=true, CUDA_BATCH=536870912
+```
+
+Start with `mine:max`. If gas/block conditions are stable and the VPS is healthy, try `mine:turbo`. Larger batches make GPU utilization more visible and reduce wrapper/RPC overhead, but they can waste more work if the block/epoch changes mid-batch.
+
+Monitor with:
+
+```bash
+nvidia-smi dmon -s pucvmet -d 1
+```

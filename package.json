@@ -9,6 +9,8 @@
     "mine": "node src/mine.js",
     "mine:dry": "RUN_TX=false node src/mine.js",
     "mine:live": "RUN_TX=true node src/mine.js",
+    "mine:max": "RUN_TX=true GPU=true CUDA_BATCH=268435456 LOG_EVERY_SEC=5 node src/mine.js",
+    "mine:turbo": "RUN_TX=true GPU=true CUDA_BATCH=536870912 LOG_EVERY_SEC=5 node src/mine.js",
     "bench": "node src/bench.js",
     "check": "node --check src/config.js && node --check src/slc.js && node --check src/status.js && node --check src/mine.js && node --check src/worker.js && node --check src/bench.js && node --check src/cuda.js",
     "build:cuda": "bash native/build_cuda.sh"
