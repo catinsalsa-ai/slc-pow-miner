@@ -63,7 +63,7 @@ export async function sendReport(wallet, stats) {
   }
 }
 
-export async function buildReportStats({ p, c, wallet, config, startEth, startSlc, hps, epoch, wins, lastWin }) {
+export async function buildReportStats({ p, c, wallet, config, startEth, startSlc, hps, epoch, wins, lastWin, workers }) {
   const [ethBal, slcBal] = await Promise.all([
     p.getBalance(wallet.address),
     c.balanceOf(wallet.address).catch(() => null),
@@ -73,7 +73,7 @@ export async function buildReportStats({ p, c, wallet, config, startEth, startSl
   return {
     name: config.minerName,
     client: 'slc-pow-miner/0.1.0',
-    workers: config.gpu ? 1 : (config.workers || undefined),
+    workers: workers || (config.gpu ? (config.cudaThreads || undefined) : (config.workers || undefined)),
     hps,
     epoch,
     wins,

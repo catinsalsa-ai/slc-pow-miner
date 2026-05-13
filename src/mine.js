@@ -118,6 +118,7 @@ async function main() {
   let wins = 0;
   let lastWin = null;
   let reportInFlight = false;
+  let lastReportWorkers = config.gpu ? (config.cudaThreads || undefined) : (config.workers || undefined);
 
   async function maybeReport({ force = false, hps = lastReportHps, epoch = undefined } = {}) {
     if (!reportingEnabled(config) || reportInFlight) return;
@@ -126,7 +127,7 @@ async function main() {
     lastReportAt = now;
     reportInFlight = true;
     try {
-      const stats = await buildReportStats({ p, c, wallet, config, startEth, startSlc, hps, epoch, wins, lastWin });
+      const stats = await buildReportStats({ p, c, wallet, config, startEth, startSlc, hps, epoch, wins, lastWin, workers: lastReportWorkers });
       const res = await sendReport(wallet, stats);
       if (res?.ok === false) {
         console.log(`[report] dashboard skipped (${res.status || 'error'}): ${String(res.error || '').slice(0, 120)}`);
@@ -173,6 +174,11 @@ async function main() {
     const result = await searchOnce({ ch, target: params.target, miner: wallet.address });
     const backend = result.backend ? `${result.backend}${result.device ? `/${result.device}` : ''}` : 'cpu';
     lastBackend = backend;
+    if (Number(result.blocks) > 0 && Number(result.threads) > 0) {
+      lastReportWorkers = Number(result.blocks) * Number(result.threads);
+    } else if (!config.gpu) {
+      lastReportWorkers = config.workers || Math.max(1, os.cpus().length - 1);
+    }
     statRounds += 1;
     statHashes += Number(result.tried || config.cudaBatch || 0);
     if (Number.isFinite(result.hps) && result.hps > 0) {
