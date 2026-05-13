@@ -174,8 +174,11 @@ async function main() {
     const result = await searchOnce({ ch, target: params.target, miner: wallet.address });
     const backend = result.backend ? `${result.backend}${result.device ? `/${result.device}` : ''}` : 'cpu';
     lastBackend = backend;
-    if (Number(result.blocks) > 0 && Number(result.threads) > 0) {
-      lastReportWorkers = Number(result.blocks) * Number(result.threads);
+    if (Number(result.threads) > 0) {
+      // Dashboard workers field is a small integer. Reporting CUDA blocks*threads
+      // can be >11M on RTX 5090 and the public API rejects it as out of range.
+      // Show CUDA threads-per-block instead; launch geometry stays visible in logs.
+      lastReportWorkers = Number(result.threads);
     } else if (!config.gpu) {
       lastReportWorkers = config.workers || Math.max(1, os.cpus().length - 1);
     }
