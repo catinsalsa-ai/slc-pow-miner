@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 import { config, requireBurnerKey } from './config.js';
 import { provider, contract, mineParams, gasSnapshot, challenge as makeChallenge, commitment as makeCommitment, fmtGwei, fmtEth } from './slc.js';
 import { cudaAvailable, cudaSearchOnce } from './cuda.js';
+import { buildReportStats, reportingEnabled, sendReport } from './report.js';
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function short(x) { return `${String(x).slice(0,10)}…${String(x).slice(-6)}`; }
@@ -35,6 +36,7 @@ function printBanner(wallet, budgetLabel, workerLabel) {
   console.log(`CUDA batch  : ${config.cudaBatch}`);
   console.log(`CPU fallback: ${workerLabel}`);
   console.log(`Log every   : ${config.logEverySec}s`);
+  console.log(`Dashboard   : ${reportingEnabled(config) ? `ON as ${config.minerName}` : 'OFF (REPORT=off)'}`);
   console.log('────────────────────────────────────────');
   if (config.runTx) console.log('⚠️  Live mode aktif: TX beneran dikirim kalau nonce valid ketemu.');
   console.log('');
@@ -93,7 +95,10 @@ async function main() {
   const p = provider(config.rpcUrl);
   const wallet = new ethers.Wallet(pk, p);
   const c = contract(wallet);
-  const startEth = await p.getBalance(wallet.address);
+  const [startEth, startSlc] = await Promise.all([
+    p.getBalance(wallet.address),
+    contract(p).balanceOf(wallet.address).catch(() => 0n),
+  ]);
   const budgetLabel = config.budgetCapEnabled ? `${config.budgetEth} ETH` : 'unlimited (BUDGET_ETH=0)';
   const workerLabel = `${config.workers || Math.max(1, os.cpus().length - 1)} workers`;
   printBanner(wallet.address, budgetLabel, workerLabel);
@@ -105,6 +110,32 @@ async function main() {
   let statStart = Date.now();
   let lastBlock = 0;
   let lastBackend = config.gpu ? 'cuda' : 'cpu';
+  let lastReportAt = 0;
+  let lastReportHps = 0;
+  let wins = 0;
+  let lastWin = null;
+  let reportInFlight = false;
+
+  async function maybeReport({ force = false, hps = lastReportHps, epoch = undefined } = {}) {
+    if (!reportingEnabled(config) || reportInFlight) return;
+    const now = Date.now();
+    if (!force && now - lastReportAt < 60000) return;
+    lastReportAt = now;
+    reportInFlight = true;
+    try {
+      const stats = await buildReportStats({ p, c, wallet, config, startEth, startSlc, hps, epoch, wins, lastWin });
+      const res = await sendReport(wallet, stats);
+      if (res?.ok === false) {
+        console.log(`[report] dashboard skipped (${res.status || 'error'}): ${String(res.error || '').slice(0, 120)}`);
+      } else if (force) {
+        console.log('[report] dashboard updated');
+      }
+    } catch (err) {
+      console.log(`[report] dashboard skipped: ${err?.message || err}`);
+    } finally {
+      reportInFlight = false;
+    }
+  }
 
   while (true) {
     const gas = await gasSnapshot(p);
@@ -143,6 +174,7 @@ async function main() {
     if (shouldLog) {
       const loopHps = statHashes / elapsed;
       const gpuHps = statGpuHpsSamples > 0 ? statGpuHpsSum / statGpuHpsSamples : loopHps;
+      lastReportHps = gpuHps;
       const status = result.found ? '🎯 FOUND' : '⛏️  mining';
       console.log(`[${nowTime()}] ${status} | block=${block.number} epoch=${params.epoch} | gpu=${fmtHashrate(gpuHps)} | loop=${fmtHashrate(loopHps)} | tried=${fmtCount(statHashes)} / ${statRounds} rounds | gas=${fmtGwei(gas.gasPrice)} gwei | ${lastBackend}`);
       statRounds = 0;
@@ -151,6 +183,7 @@ async function main() {
       statGpuHpsSamples = 0;
       statStart = Date.now();
       lastBlock = block.number;
+      void maybeReport({ hps: gpuHps, epoch: params.epoch });
     }
     if (!result.found) {
       continue;
@@ -188,6 +221,11 @@ async function main() {
     console.log(`[tx] reveal sent ${revealTx.hash}`);
     const rr = await revealTx.wait(1);
     console.log(rr?.status === 1 ? `[win] reveal success block=${rr.blockNumber}` : `[miss] reveal reverted block=${rr?.blockNumber}`);
+    if (rr?.status === 1) {
+      wins += 1;
+      lastWin = { tx: revealTx.hash, block: rr.blockNumber, at: Date.now() };
+      void maybeReport({ force: true, hps: lastReportHps, epoch: fresh.epoch });
+    }
   }
 }
 

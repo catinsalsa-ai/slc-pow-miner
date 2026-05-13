@@ -17,7 +17,7 @@ The upstream public repo currently ships `SKILL.md` but not the referenced `mine
 - Gas cap via `MAX_GAS_GWEI`
 - Session spend cap via `BUDGET_ETH`
 - Transaction kill switch: `RUN_TX=false` by default
-- No telemetry/reporting by default: `REPORT=off`
+- No telemetry/reporting by default: `REPORT=off`; set `REPORT=on` to appear on the Silicoin public miner dashboard
 
 ## Contract
 
@@ -90,7 +90,7 @@ See [`ROADMAP.md`](ROADMAP.md).
 - Never paste private keys into chat, GitHub, Discord, Telegram, screenshots, or issues.
 - Put the burner private key only in local `.env` on your VPS.
 - Start with tiny ETH funding and low `BUDGET_ETH`.
-- Keep `REPORT=off` unless you explicitly want dashboard telemetry.
+- Keep `REPORT=off` unless you explicitly want public dashboard telemetry. Use `REPORT=on` + `MINER_NAME=your-name` to appear at `silicoin.network` miners list; only signed stats are sent, never your private key.
 - Keep `RUN_TX=false` for dry-run mode.
 
 ## License
@@ -115,6 +115,8 @@ npm run mine:turbo  # live mode, GPU=true, CUDA_BATCH=536870912
 ```
 
 Start with `mine:max`. If gas/block conditions are stable and the VPS is healthy, try `mine:turbo`. Larger batches make GPU utilization more visible and reduce wrapper/RPC overhead, but they can waste more work if the block/epoch changes mid-batch.
+
+To show up on the official dashboard, set `REPORT=on` in `.env`; the miner reports every ~60s and once after a successful reveal.
 
 Monitor with:
 
