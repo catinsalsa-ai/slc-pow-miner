@@ -184,11 +184,13 @@ Use this RTX 5090 starter config:
 ```env
 RPC_URL=https://ethereum-rpc.publicnode.com
 PRIVATE_KEY=0xYOUR_BURNER_PRIVATE_KEY_HERE
+# BUDGET_ETH=0 disables session spend cap. Keep a small cap for first live runs.
 BUDGET_ETH=0.003
 MAX_GAS_GWEI=3
 PRIORITY_FEE_GWEI=0.2
 RUN_TX=false
-WORKERS=0
+# WORKERS only affects CPU fallback. Vast may expose 384 host CPUs; set 48 to match allocated CPU.
+WORKERS=48
 BATCH_SIZE=50000
 ANCHOR_REFRESH_BLOCKS=20
 REPORT=off
@@ -379,6 +381,7 @@ Use this for first mainnet attempt:
 GPU=true
 CUDA_BATCH=8388608
 RUN_TX=true
+# BUDGET_ETH=0 disables session spend cap. Keep a small cap for first live runs.
 BUDGET_ETH=0.003
 MAX_GAS_GWEI=3
 PRIORITY_FEE_GWEI=0.2
@@ -386,6 +389,17 @@ REPORT=off
 ```
 
 This is intentionally strict.
+
+
+### Disable budget cap
+
+If you intentionally want no session spend cap, set:
+
+```env
+BUDGET_ETH=0
+```
+
+This does **not** give free gas and does **not** remove `MAX_GAS_GWEI`. It only disables the miner's session stop-loss. Use carefully; reverted/missed transactions can still burn ETH.
 
 ## 14. More aggressive config
 
@@ -502,11 +516,13 @@ Recommended dry-run `.env`:
 ```env
 RPC_URL=https://ethereum-rpc.publicnode.com
 PRIVATE_KEY=0xYOUR_BURNER_PRIVATE_KEY_HERE
+# BUDGET_ETH=0 disables session spend cap. Keep a small cap for first live runs.
 BUDGET_ETH=0.003
 MAX_GAS_GWEI=3
 PRIORITY_FEE_GWEI=0.2
 RUN_TX=false
-WORKERS=0
+# WORKERS only affects CPU fallback. Vast may expose 384 host CPUs; set 48 to match allocated CPU.
+WORKERS=48
 BATCH_SIZE=50000
 ANCHOR_REFRESH_BLOCKS=20
 REPORT=off
@@ -533,3 +549,15 @@ Next serious upgrades:
 - private/builder RPC for commit/reveal timing,
 - receipt/revert tracking,
 - exact block reveal bundle logic.
+
+## 19. Note about `Workers=383` in logs
+
+Your Vast container can expose the host CPU count, so `WORKERS=0` may show around `383 CPU fallback`. That does not mean CUDA is using 383 CPU threads. With `GPU=true`, workers are only used if CUDA fails and the miner falls back to CPU.
+
+For your allocated 48 CPU cores, set this to avoid huge CPU fallback bursts:
+
+```env
+WORKERS=48
+```
+
+For pure CUDA runs, the important setting is still `CUDA_BATCH`, not `WORKERS`.

@@ -176,6 +176,7 @@ Safe GPU dry-run config:
 ```env
 RPC_URL=https://ethereum-rpc.publicnode.com
 PRIVATE_KEY=0xYOUR_BURNER_PRIVATE_KEY_HERE
+# BUDGET_ETH=0 disables session spend cap. Keep a small cap for first live runs.
 BUDGET_ETH=0.003
 MAX_GAS_GWEI=3
 PRIORITY_FEE_GWEI=0.2
@@ -418,6 +419,7 @@ Conservative:
 GPU=true
 CUDA_BATCH=4194304
 RUN_TX=true
+# BUDGET_ETH=0 disables session spend cap. Keep a small cap for first live runs.
 BUDGET_ETH=0.003
 MAX_GAS_GWEI=3
 PRIORITY_FEE_GWEI=0.2
@@ -435,6 +437,17 @@ MAX_GAS_GWEI=8
 PRIORITY_FEE_GWEI=1
 REPORT=off
 ```
+
+
+### Disable budget cap
+
+If you intentionally want no session spend cap, set:
+
+```env
+BUDGET_ETH=0
+```
+
+This does **not** give free gas and does **not** remove `MAX_GAS_GWEI`. It only disables the miner's session stop-loss. Use carefully; reverted/missed transactions can still burn ETH.
 
 ## 16. Current limitations
 

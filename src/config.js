@@ -16,10 +16,13 @@ function boolEnv(name, fallback = false) {
   return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
 }
 
+const budgetEth = numEnv('BUDGET_ETH', 0.003);
+
 export const config = {
   rpcUrl: process.env.RPC_URL || 'https://ethereum-rpc.publicnode.com',
   privateKey: (process.env.PRIVATE_KEY || '').trim(),
-  budgetEth: numEnv('BUDGET_ETH', 0.003),
+  budgetEth,
+  budgetCapEnabled: budgetEth > 0,
   maxGasGwei: numEnv('MAX_GAS_GWEI', 3),
   priorityFeeGwei: numEnv('PRIORITY_FEE_GWEI', 0.2),
   runTx: boolEnv('RUN_TX', false),

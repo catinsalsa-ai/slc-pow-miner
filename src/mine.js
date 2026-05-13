@@ -64,7 +64,9 @@ async function main() {
   const startEth = await p.getBalance(wallet.address);
   console.log(`SLC miner MVP starting for ${wallet.address}`);
   console.log(`RUN_TX=${config.runTx} — ${config.runTx ? 'LIVE MAINNET TX ENABLED' : 'dry-run search only, NO TX will be sent'}`);
-  console.log(`Budget=${config.budgetEth} ETH MaxGas=${config.maxGasGwei} gwei Batch=${config.batchSize} Workers=${config.workers || Math.max(1, os.cpus().length - 1)} GPU=${config.gpu ? 'cuda' : 'off'} CudaBatch=${config.cudaBatch}`);
+  const budgetLabel = config.budgetCapEnabled ? `${config.budgetEth} ETH` : 'unlimited (BUDGET_ETH=0)';
+  const workerLabel = `${config.workers || Math.max(1, os.cpus().length - 1)} CPU fallback`;
+  console.log(`Budget=${budgetLabel} MaxGas=${config.maxGasGwei} gwei Batch=${config.batchSize} Workers=${workerLabel} GPU=${config.gpu ? 'cuda' : 'off'} CudaBatch=${config.cudaBatch}`);
 
   while (true) {
     const gas = await gasSnapshot(p);
@@ -73,10 +75,12 @@ async function main() {
       await sleep(20000);
       continue;
     }
-    const spent = startEth - await p.getBalance(wallet.address);
-    if (Number(fmtEth(spent)) >= config.budgetEth) {
-      console.log(`[stop] gas spent ${fmtEth(spent)} ETH reached budget ${config.budgetEth}`);
-      break;
+    if (config.budgetCapEnabled) {
+      const spent = startEth - await p.getBalance(wallet.address);
+      if (Number(fmtEth(spent)) >= config.budgetEth) {
+        console.log(`[stop] gas spent ${fmtEth(spent)} ETH reached budget ${config.budgetEth}`);
+        break;
+      }
     }
 
     const params = await mineParams(c);

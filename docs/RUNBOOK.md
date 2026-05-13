@@ -81,6 +81,7 @@ Safe starter config:
 ```env
 RPC_URL=https://ethereum-rpc.publicnode.com
 PRIVATE_KEY=
+# BUDGET_ETH=0 disables session spend cap. Keep a small cap for first live runs.
 BUDGET_ETH=0.003
 MAX_GAS_GWEI=3
 PRIORITY_FEE_GWEI=0.2
@@ -375,6 +376,17 @@ The Node process still handles all RPC/gas/commit/reveal logic and verifies the 
 ### Builder bundles
 
 The public spec says reveal must land exactly one block after commit. This MVP uses public mempool best-effort after commit confirmation. For production, exact-block builder bundles are better.
+
+
+### Disable budget cap
+
+If you intentionally want no session spend cap, set:
+
+```env
+BUDGET_ETH=0
+```
+
+This does **not** give free gas and does **not** remove `MAX_GAS_GWEI`. It only disables the miner's session stop-loss. Use carefully; reverted/missed transactions can still burn ETH.
 
 ## 11. Troubleshooting
 
