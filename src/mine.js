@@ -219,23 +219,56 @@ async function main() {
     const maxFeePerGas = (feeData.maxFeePerGas ?? gas.gasPrice * 2n) + priority;
     const txOpts = { maxFeePerGas, maxPriorityFeePerGas: priority };
 
-    console.log(`[tx] commit ${short(cm)}`);
-    const commitTx = await c.commit(cm, txOpts);
-    console.log(`[tx] commit sent ${commitTx.hash}`);
-    const receipt = await commitTx.wait(1);
-    if (!receipt || receipt.status !== 1) {
-      console.log('[tx] commit failed/reverted; restarting');
+    let commitGas = 0n;
+    let revealGas = 0n;
+    try {
+      [commitGas, revealGas] = await Promise.all([
+        c.commit.estimateGas(cm, txOpts),
+        c.reveal.estimateGas(result.nonce, secret, block.number, txOpts),
+      ]);
+      const balanceNow = await p.getBalance(wallet.address);
+      const neededWei = ((commitGas + revealGas) * maxFeePerGas * 12n) / 10n;
+      if (balanceNow < neededWei) {
+        console.log(`[skip] insufficient ETH for commit+reveal gas; have=${fmtEth(balanceNow)} ETH need≈${fmtEth(neededWei)} ETH. Top up burner wallet.`);
+        continue;
+      }
+    } catch (err) {
+      if (err?.code === 'INSUFFICIENT_FUNDS' || String(err?.message || '').includes('insufficient funds')) {
+        const balanceNow = await p.getBalance(wallet.address).catch(() => 0n);
+        console.log(`[skip] insufficient ETH for gas preflight; have=${fmtEth(balanceNow)} ETH. Top up burner wallet before live mining.`);
+        continue;
+      }
+      console.log(`[skip] gas preflight failed: ${err?.shortMessage || err?.message || err}`);
       continue;
     }
-    console.log(`[tx] commit mined block=${receipt.blockNumber}; sending reveal for next block best-effort`);
-    const revealTx = await c.reveal(result.nonce, secret, block.number, txOpts);
-    console.log(`[tx] reveal sent ${revealTx.hash}`);
-    const rr = await revealTx.wait(1);
-    console.log(rr?.status === 1 ? `[win] reveal success block=${rr.blockNumber}` : `[miss] reveal reverted block=${rr?.blockNumber}`);
-    if (rr?.status === 1) {
-      wins += 1;
-      lastWin = { tx: revealTx.hash, block: rr.blockNumber, at: Date.now() };
-      void maybeReport({ force: true, hps: lastReportHps, epoch: fresh.epoch });
+
+    try {
+      console.log(`[tx] commit ${short(cm)} gas≈${commitGas.toString()}`);
+      const commitTx = await c.commit(cm, { ...txOpts, gasLimit: (commitGas * 13n) / 10n });
+      console.log(`[tx] commit sent ${commitTx.hash}`);
+      const receipt = await commitTx.wait(1);
+      if (!receipt || receipt.status !== 1) {
+        console.log('[tx] commit failed/reverted; restarting');
+        continue;
+      }
+      console.log(`[tx] commit mined block=${receipt.blockNumber}; sending reveal for next block best-effort`);
+      const revealTx = await c.reveal(result.nonce, secret, block.number, { ...txOpts, gasLimit: (revealGas * 13n) / 10n });
+      console.log(`[tx] reveal sent ${revealTx.hash}`);
+      const rr = await revealTx.wait(1);
+      console.log(rr?.status === 1 ? `[win] reveal success block=${rr.blockNumber}` : `[miss] reveal reverted block=${rr?.blockNumber}`);
+      if (rr?.status === 1) {
+        wins += 1;
+        lastWin = { tx: revealTx.hash, block: rr.blockNumber, at: Date.now() };
+        void maybeReport({ force: true, hps: lastReportHps, epoch: fresh.epoch });
+      }
+    } catch (err) {
+      if (err?.code === 'INSUFFICIENT_FUNDS' || String(err?.message || '').includes('insufficient funds')) {
+        const balanceNow = await p.getBalance(wallet.address).catch(() => 0n);
+        console.log(`[tx] insufficient ETH during tx flow; have=${fmtEth(balanceNow)} ETH. Top up burner wallet.`);
+      } else {
+        console.log(`[tx] failed: ${err?.shortMessage || err?.message || err}`);
+      }
+      continue;
     }
   }
 }
