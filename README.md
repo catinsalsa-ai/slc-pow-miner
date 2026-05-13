@@ -57,6 +57,8 @@ Keep `RUN_TX=false` until you intentionally want to send mainnet transactions.
 
 Full VPS tutorial: [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
 
+Full GPU/CUDA tutorial for NVIDIA VPS/RTX: [`docs/GPU-CUDA-RUNBOOK.md`](docs/GPU-CUDA-RUNBOOK.md)
+
 ## Scripts
 
 ```bash

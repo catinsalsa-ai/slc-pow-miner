@@ -152,6 +152,8 @@ For mining, a paid/private Alchemy, Infura, QuickNode, or own node RPC is better
 
 ## 5. Benchmark
 
+For the complete NVIDIA VPS / RTX setup, see [`GPU-CUDA-RUNBOOK.md`](GPU-CUDA-RUNBOOK.md).
+
 CPU benchmark:
 
 ```bash
