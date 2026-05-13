@@ -216,8 +216,13 @@ async function main() {
     const cm = makeCommitment(result.nonce, secret, wallet.address, block.number);
     const feeData = await p.getFeeData();
     const priority = ethers.parseUnits(String(config.priorityFeeGwei), 'gwei');
-    const maxFeePerGas = (feeData.maxFeePerGas ?? gas.gasPrice * 2n) + priority;
+    const gasCap = ethers.parseUnits(String(config.maxGasGwei), 'gwei');
+    const baseFee = block.baseFeePerGas ?? feeData.gasPrice ?? gas.gasPrice;
+    let maxFeePerGas = (baseFee * 2n) + priority;
+    if (maxFeePerGas > gasCap) maxFeePerGas = gasCap;
+    if (priority > maxFeePerGas) maxFeePerGas = priority;
     const txOpts = { maxFeePerGas, maxPriorityFeePerGas: priority };
+    console.log(`[fee] base=${fmtGwei(baseFee)} gwei priority=${config.priorityFeeGwei} gwei maxFee=${fmtGwei(maxFeePerGas)} gwei cap=${config.maxGasGwei} gwei`);
 
     let commitGas = 0n;
     let revealGas = 0n;
