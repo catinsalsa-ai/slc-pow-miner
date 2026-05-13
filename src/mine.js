@@ -100,6 +100,8 @@ async function main() {
 
   let statRounds = 0;
   let statHashes = 0;
+  let statGpuHpsSum = 0;
+  let statGpuHpsSamples = 0;
   let statStart = Date.now();
   let lastBlock = 0;
   let lastBackend = config.gpu ? 'cuda' : 'cpu';
@@ -132,14 +134,21 @@ async function main() {
     lastBackend = backend;
     statRounds += 1;
     statHashes += Number(result.tried || config.cudaBatch || 0);
+    if (Number.isFinite(result.hps) && result.hps > 0) {
+      statGpuHpsSum += result.hps;
+      statGpuHpsSamples += 1;
+    }
     const elapsed = Math.max(0.001, (Date.now() - statStart) / 1000);
     const shouldLog = result.found || elapsed >= config.logEverySec || block.number !== lastBlock;
     if (shouldLog) {
-      const hps = statHashes / elapsed;
+      const loopHps = statHashes / elapsed;
+      const gpuHps = statGpuHpsSamples > 0 ? statGpuHpsSum / statGpuHpsSamples : loopHps;
       const status = result.found ? '🎯 FOUND' : '⛏️  mining';
-      console.log(`[${nowTime()}] ${status} | block=${block.number} epoch=${params.epoch} | ${fmtHashrate(hps)} | tried=${fmtCount(statHashes)} / ${statRounds} rounds | gas=${fmtGwei(gas.gasPrice)} gwei | ${lastBackend}`);
+      console.log(`[${nowTime()}] ${status} | block=${block.number} epoch=${params.epoch} | gpu=${fmtHashrate(gpuHps)} | loop=${fmtHashrate(loopHps)} | tried=${fmtCount(statHashes)} / ${statRounds} rounds | gas=${fmtGwei(gas.gasPrice)} gwei | ${lastBackend}`);
       statRounds = 0;
       statHashes = 0;
+      statGpuHpsSum = 0;
+      statGpuHpsSamples = 0;
       statStart = Date.now();
       lastBlock = block.number;
     }

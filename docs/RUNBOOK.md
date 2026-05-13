@@ -440,3 +440,6 @@ LOG_EVERY_SEC=5
 ```
 
 Use `LOG_EVERY_SEC=10` for quieter tmux logs, or `LOG_EVERY_SEC=1` if you want faster visual feedback. Mining speed is unchanged; only terminal output is throttled.
+
+
+Note: The status line shows `gpu=` for CUDA kernel speed and `loop=` for end-to-end speed including RPC, process startup, and contract reads.

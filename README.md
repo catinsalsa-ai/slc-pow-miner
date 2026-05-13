@@ -101,3 +101,6 @@ MIT
 ### Cleaner logs
 
 Set `LOG_EVERY_SEC=5` in `.env` to print one aggregated mining status line every 5 seconds instead of one line per CUDA batch. Increase to `10` for quieter tmux logs.
+
+
+Note: The status line shows `gpu=` for CUDA kernel speed and `loop=` for end-to-end speed including RPC, process startup, and contract reads.
