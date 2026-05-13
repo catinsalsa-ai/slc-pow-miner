@@ -59,6 +59,8 @@ Full VPS tutorial: [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
 
 Full GPU/CUDA tutorial for NVIDIA VPS/RTX: [`docs/GPU-CUDA-RUNBOOK.md`](docs/GPU-CUDA-RUNBOOK.md)
 
+Vast.ai RTX 5090 / CUDA 13.2 guide: [`docs/VAST-RTX5090-CUDA13-GUIDE.md`](docs/VAST-RTX5090-CUDA13-GUIDE.md)
+
 ## Scripts
 
 ```bash
