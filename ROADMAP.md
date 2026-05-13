@@ -25,11 +25,12 @@
 - [x] GPU self-test at build time
 - [x] Auto fallback: CUDA > JS CPU workers
 - [ ] OpenCL backend
-- [ ] Runtime GPU benchmark/status panel
+- [x] Runtime CUDA launch benchmark (`npm run bench:cuda`)
 
 ## Phase 4 — Production transaction strategy
 
 - [ ] Builder bundle support for exact commit/reveal block targeting
+- [x] Short state/RPC cache for mining loop
 - [ ] Better nonce management and receipt polling
 - [ ] Reorg/missed reveal handling
 - [x] Optional dashboard telemetry, still off by default

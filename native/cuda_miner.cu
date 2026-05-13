@@ -168,6 +168,7 @@ struct CudaContext {
   cudaDeviceProp prop;
   int blocks;
   int threads;
+  int blocks_mult;
 };
 
 static int hexval(char c) {
@@ -200,8 +201,15 @@ static int init_cuda(CudaContext *ctx) {
   cudaError_t err = cudaSetDevice(dev);
   if (err != cudaSuccess) { fprintf(stderr, "cudaSetDevice failed: %s\n", cudaGetErrorString(err)); return 3; }
   cudaGetDeviceProperties(&ctx->prop, dev);
-  ctx->threads = 256;
-  ctx->blocks = ctx->prop.multiProcessorCount * 128;
+  const char *threads_env = getenv("CUDA_THREADS");
+  const char *blocks_env = getenv("CUDA_BLOCKS");
+  const char *blocks_mult_env = getenv("CUDA_BLOCKS_MULT");
+  ctx->threads = threads_env ? atoi(threads_env) : 256;
+  if (ctx->threads != 128 && ctx->threads != 256 && ctx->threads != 512) ctx->threads = 256;
+  ctx->blocks_mult = blocks_mult_env ? atoi(blocks_mult_env) : 128;
+  if (ctx->blocks_mult < 16) ctx->blocks_mult = 16;
+  if (ctx->blocks_mult > 512) ctx->blocks_mult = 512;
+  ctx->blocks = blocks_env ? atoi(blocks_env) : (ctx->prop.multiProcessorCount * ctx->blocks_mult);
   if (ctx->blocks < 128) ctx->blocks = 128;
 
   cudaMalloc(&ctx->d_prefix, 17 * sizeof(uint64_t));
@@ -279,9 +287,9 @@ static int run_job(CudaContext *ctx, const char *challenge_hex, const char *mine
   if (h_found) {
     printf("{\"type\":\"found\",\"nonce\":\"%llu\",\"hash\":\"0x", (unsigned long long)h_nonce);
     print_hex32(h_hash);
-    printf("\",\"tried\":\"%llu\",\"ms\":%.3f,\"hps\":%.0f,\"device\":\"%s\"}\n", (unsigned long long)batch, ms, hps, ctx->prop.name);
+    printf("\",\"tried\":\"%llu\",\"ms\":%.3f,\"hps\":%.0f,\"device\":\"%s\",\"blocks\":%d,\"threads\":%d}\n", (unsigned long long)batch, ms, hps, ctx->prop.name, ctx->blocks, ctx->threads);
   } else {
-    printf("{\"type\":\"progress\",\"found\":false,\"tried\":\"%llu\",\"ms\":%.3f,\"hps\":%.0f,\"device\":\"%s\"}\n", (unsigned long long)batch, ms, hps, ctx->prop.name);
+    printf("{\"type\":\"progress\",\"found\":false,\"tried\":\"%llu\",\"ms\":%.3f,\"hps\":%.0f,\"device\":\"%s\",\"blocks\":%d,\"threads\":%d}\n", (unsigned long long)batch, ms, hps, ctx->prop.name, ctx->blocks, ctx->threads);
   }
   fflush(stdout);
   return 0;

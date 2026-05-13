@@ -35,6 +35,8 @@ function printBanner(wallet, budgetLabel, workerLabel) {
   console.log(`Gas cap     : ${config.maxGasGwei} gwei | priority ${config.priorityFeeGwei} gwei`);
   console.log(`CUDA batch  : ${config.cudaBatch}`);
   console.log(`CUDA worker : ${config.cudaPersistent ? 'persistent v2' : 'one-shot v1'}`);
+  console.log(`CUDA launch : threads=${config.cudaThreads || 'auto'} blocks=${config.cudaBlocks || 'SM*mult'} mult=${config.cudaBlocksMult || 'auto'}`);
+  console.log(`State cache : ${config.stateCacheMs}ms`);
   console.log(`CPU fallback: ${workerLabel}`);
   console.log(`Log every   : ${config.logEverySec}s`);
   console.log(`Dashboard   : ${reportingEnabled(config) ? `ON as ${config.minerName}` : 'OFF (REPORT=off)'}`);
@@ -139,7 +141,16 @@ async function main() {
   }
 
   while (true) {
-    const gas = await gasSnapshot(p);
+    const nowLoop = Date.now();
+    if (!main.cachedState || nowLoop - main.cachedState.at > config.stateCacheMs) {
+      const [gas, params, block] = await Promise.all([
+        gasSnapshot(p),
+        mineParams(c),
+        p.getBlock('latest'),
+      ]);
+      main.cachedState = { at: nowLoop, gas, params, block };
+    }
+    const { gas, params, block } = main.cachedState;
     if (gas.gasGwei > config.maxGasGwei) {
       console.log(`[gas] ${gas.gasGwei.toFixed(3)} gwei > cap ${config.maxGasGwei}; waiting 20s`);
       await sleep(20000);
@@ -153,13 +164,11 @@ async function main() {
       }
     }
 
-    const params = await mineParams(c);
     if (!params.poolLive) {
       console.log('[wait] poolLive=false; waiting 60s');
       await sleep(60000);
       continue;
     }
-    const block = await p.getBlock('latest');
     const ch = makeChallenge(block.hash, params.epochSeed);
     const result = await searchOnce({ ch, target: params.target, miner: wallet.address });
     const backend = result.backend ? `${result.backend}${result.device ? `/${result.device}` : ''}` : 'cpu';
@@ -177,7 +186,8 @@ async function main() {
       const gpuHps = statGpuHpsSamples > 0 ? statGpuHpsSum / statGpuHpsSamples : loopHps;
       lastReportHps = gpuHps;
       const status = result.found ? '🎯 FOUND' : '⛏️  mining';
-      console.log(`[${nowTime()}] ${status} | block=${block.number} epoch=${params.epoch} | gpu=${fmtHashrate(gpuHps)} | loop=${fmtHashrate(loopHps)} | tried=${fmtCount(statHashes)} / ${statRounds} rounds | gas=${fmtGwei(gas.gasPrice)} gwei | ${lastBackend}`);
+      const launch = result.blocks && result.threads ? ` | launch=${result.blocks}x${result.threads}` : '';
+      console.log(`[${nowTime()}] ${status} | block=${block.number} epoch=${params.epoch} | gpu=${fmtHashrate(gpuHps)} | loop=${fmtHashrate(loopHps)} | tried=${fmtCount(statHashes)} / ${statRounds} rounds | gas=${fmtGwei(gas.gasPrice)} gwei | ${lastBackend}${launch}`);
       statRounds = 0;
       statHashes = 0;
       statGpuHpsSum = 0;

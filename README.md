@@ -114,6 +114,8 @@ npm run mine:max       # live mode, GPU=true, CUDA_BATCH=268435456
 npm run mine:turbo     # live mode, GPU=true, CUDA_BATCH=536870912
 npm run mine:v2        # live mode, persistent CUDA worker, CUDA_BATCH=268435456
 npm run mine:v2:turbo  # live mode, persistent CUDA worker, CUDA_BATCH=536870912
+npm run mine:next      # next-level preset: v2 turbo + launch tuning + RPC cache
+npm run bench:cuda     # benchmark launch configs on your GPU
 ```
 
 Start with `mine:v2`. If gas/block conditions are stable and the VPS is healthy, try `mine:v2:turbo`. The v2 mode keeps the CUDA helper alive between rounds, reducing process spawn/init overhead. Larger batches make GPU utilization more visible and reduce wrapper/RPC overhead, but they can waste more work if the block/epoch changes mid-batch.
@@ -127,3 +129,20 @@ Monitor with:
 ```bash
 nvidia-smi dmon -s pucvmet -d 1
 ```
+
+### Next-level mode
+
+`npm run mine:next` enables the current aggressive preset:
+
+```bash
+RUN_TX=true GPU=true CUDA_PERSISTENT=true CUDA_BATCH=536870912 CUDA_THREADS=256 CUDA_BLOCKS_MULT=256 STATE_CACHE_MS=2500
+```
+
+Before long runs, benchmark launch configs on the actual VPS:
+
+```bash
+npm run build:cuda
+npm run bench:cuda
+```
+
+Then copy the best `CUDA_THREADS` and `CUDA_BLOCKS_MULT` values into `.env`.

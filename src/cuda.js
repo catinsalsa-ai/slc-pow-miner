@@ -29,6 +29,14 @@ export function cudaAvailable() {
   return Boolean(findCudaBinary());
 }
 
+function cudaEnv() {
+  const env = { ...process.env };
+  if (config.cudaThreads > 0) env.CUDA_THREADS = String(config.cudaThreads);
+  if (config.cudaBlocks > 0) env.CUDA_BLOCKS = String(config.cudaBlocks);
+  if (config.cudaBlocksMult > 0) env.CUDA_BLOCKS_MULT = String(config.cudaBlocksMult);
+  return env;
+}
+
 function parseCudaMessage(line) {
   try { return JSON.parse(line); }
   catch { throw new Error(`CUDA JSON parse failed: ${line}`); }
@@ -37,7 +45,7 @@ function parseCudaMessage(line) {
 function verifyCudaResult({ msg, ch, target, miner, started }) {
   const tried = Number(msg.tried || config.cudaBatch);
   const dt = Math.max(0.001, (Date.now() - started) / 1000);
-  const base = { backend: 'cuda', tried, hps: Number(msg.hps || tried / dt), device: msg.device || 'CUDA GPU' };
+  const base = { backend: 'cuda', tried, hps: Number(msg.hps || tried / dt), device: msg.device || 'CUDA GPU', blocks: msg.blocks, threads: msg.threads };
   if (msg.type === 'error') throw new Error(`CUDA worker error: ${msg.error || 'unknown'}`);
   if (msg.type !== 'found') return { found: false, ...base };
 
@@ -61,7 +69,7 @@ async function cudaSearchOneShot({ ch, target, miner, startNonce }) {
   const started = Date.now();
 
   return await new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], env: cudaEnv() });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', d => { stdout += d.toString(); });
@@ -97,7 +105,7 @@ class PersistentCudaWorker {
 
   start() {
     if (this.child && !this.child.killed) return;
-    this.child = spawn(this.bin, ['--server'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = spawn(this.bin, ['--server'], { stdio: ['pipe', 'pipe', 'pipe'], env: cudaEnv() });
     this.ready = true;
     this.stderrTail = '';
     this.rl = readline.createInterface({ input: this.child.stdout });

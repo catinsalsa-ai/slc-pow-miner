@@ -469,3 +469,28 @@ nvidia-smi dmon -s pucvmet -d 1
 ### CUDA kernel optimization note
 
 The v2 CUDA helper also optimizes the hot Keccak path: static lanes from `challenge + miner + padding` are built once per job, then the kernel only updates the nonce lanes for each thread. This reduces local message-buffer work per nonce. Node still CPU-verifies any found nonce before sending TX.
+
+
+## Next-level CUDA miner mode
+
+Use this after `npm run build:cuda` when you want the most aggressive preset currently available:
+
+```bash
+npm run mine:next
+```
+
+It forces persistent CUDA worker, 536M batch, launch tuning (`CUDA_THREADS=256`, `CUDA_BLOCKS_MULT=256`), and a short `STATE_CACHE_MS=2500` cache to reduce RPC overhead in the loop. To tune for the exact VPS/GPU, run:
+
+```bash
+npm run bench:cuda
+```
+
+Copy the best values into `.env`:
+
+```env
+CUDA_THREADS=256
+CUDA_BLOCKS_MULT=256
+STATE_CACHE_MS=2500
+```
+
+`mine:next` is live mainnet mode. Use burner wallet only and keep gas caps sane.
