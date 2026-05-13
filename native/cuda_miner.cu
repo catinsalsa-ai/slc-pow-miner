@@ -1,6 +1,8 @@
 // SLC/Silicoin CUDA Keccak-256 nonce searcher.
 // Standalone helper for the Node.js miner. It does not know private keys and never sends TXs.
-// Usage: ./bin/slc-cuda <challenge32> <miner20> <target32> <startNonceU64> <batchSize>
+// One-shot usage: ./bin/slc-cuda <challenge32> <miner20> <target32> <startNonceU64> <batchSize>
+// Persistent usage: ./bin/slc-cuda --server, then stdin lines:
+//   <challenge32> <miner20> <target32> <startNonceU64> <batchSize>
 
 #include <cuda_runtime.h>
 #include <stdint.h>
@@ -43,8 +45,12 @@ __device__ void keccakf(uint64_t st[25]) {
       t = bc[0];
     }
     for (int j = 0; j < 25; j += 5) {
-      for (int i = 0; i < 5; i++) bc[i] = st[j + i];
-      for (int i = 0; i < 5; i++) st[j + i] ^= (~bc[(i + 1) % 5]) & bc[(i + 2) % 5];
+      uint64_t a0 = st[j + 0], a1 = st[j + 1], a2 = st[j + 2], a3 = st[j + 3], a4 = st[j + 4];
+      st[j + 0] = a0 ^ ((~a1) & a2);
+      st[j + 1] = a1 ^ ((~a2) & a3);
+      st[j + 2] = a2 ^ ((~a3) & a4);
+      st[j + 3] = a3 ^ ((~a4) & a0);
+      st[j + 4] = a4 ^ ((~a0) & a1);
     }
     st[0] ^= KECCAKF_RNDC[round];
   }
@@ -117,6 +123,18 @@ __global__ void mine_kernel(const uint8_t *challenge, const uint8_t *miner, cons
   }
 }
 
+struct CudaContext {
+  uint8_t *d_challenge;
+  uint8_t *d_miner;
+  uint8_t *d_target;
+  uint8_t *d_hash;
+  unsigned int *d_found;
+  uint64_t *d_nonce;
+  cudaDeviceProp prop;
+  int blocks;
+  int threads;
+};
+
 static int hexval(char c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -141,69 +159,130 @@ static void print_hex32(const uint8_t *b) {
   for (int i = 0; i < 32; i++) printf("%02x", b[i]);
 }
 
-int main(int argc, char **argv) {
-  if (argc < 6) {
-    fprintf(stderr, "Usage: %s <challenge32> <miner20> <target32> <startNonceU64> <batchSize>\n", argv[0]);
-    return 2;
-  }
-  uint8_t h_challenge[32], h_miner[20], h_target[32], h_hash[32];
-  if (!parse_hex(argv[1], h_challenge, 32) || !parse_hex(argv[2], h_miner, 20) || !parse_hex(argv[3], h_target, 32)) {
-    fprintf(stderr, "Invalid hex input. challenge/target must be 32 bytes; miner address 20 bytes.\n");
-    return 2;
-  }
-  uint64_t start = strtoull(argv[4], NULL, 10);
-  uint64_t batch = strtoull(argv[5], NULL, 10);
-  if (batch == 0) batch = 4194304ULL;
-
+static int init_cuda(CudaContext *ctx) {
+  memset(ctx, 0, sizeof(*ctx));
   int dev = 0;
   cudaError_t err = cudaSetDevice(dev);
   if (err != cudaSuccess) { fprintf(stderr, "cudaSetDevice failed: %s\n", cudaGetErrorString(err)); return 3; }
-  cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, dev);
+  cudaGetDeviceProperties(&ctx->prop, dev);
+  ctx->threads = 256;
+  ctx->blocks = ctx->prop.multiProcessorCount * 128;
+  if (ctx->blocks < 128) ctx->blocks = 128;
 
-  uint8_t *d_challenge = NULL, *d_miner = NULL, *d_target = NULL, *d_hash = NULL;
-  unsigned int *d_found = NULL;
-  uint64_t *d_nonce = NULL;
+  cudaMalloc(&ctx->d_challenge, 32);
+  cudaMalloc(&ctx->d_miner, 20);
+  cudaMalloc(&ctx->d_target, 32);
+  cudaMalloc(&ctx->d_hash, 32);
+  cudaMalloc(&ctx->d_found, sizeof(unsigned int));
+  cudaMalloc(&ctx->d_nonce, sizeof(uint64_t));
+  err = cudaGetLastError();
+  if (err != cudaSuccess) { fprintf(stderr, "cuda init failed: %s\n", cudaGetErrorString(err)); return 3; }
+  return 0;
+}
+
+static void free_cuda(CudaContext *ctx) {
+  if (ctx->d_challenge) cudaFree(ctx->d_challenge);
+  if (ctx->d_miner) cudaFree(ctx->d_miner);
+  if (ctx->d_target) cudaFree(ctx->d_target);
+  if (ctx->d_hash) cudaFree(ctx->d_hash);
+  if (ctx->d_found) cudaFree(ctx->d_found);
+  if (ctx->d_nonce) cudaFree(ctx->d_nonce);
+}
+
+static int run_job(CudaContext *ctx, const char *challenge_hex, const char *miner_hex, const char *target_hex,
+                   uint64_t start, uint64_t batch) {
+  uint8_t h_challenge[32], h_miner[20], h_target[32], h_hash[32];
+  if (!parse_hex(challenge_hex, h_challenge, 32) || !parse_hex(miner_hex, h_miner, 20) || !parse_hex(target_hex, h_target, 32)) {
+    fprintf(stdout, "{\"type\":\"error\",\"error\":\"invalid hex input\"}\n");
+    fflush(stdout);
+    return 2;
+  }
+  if (batch == 0) batch = 4194304ULL;
+
   unsigned int h_found = 0;
   uint64_t h_nonce = 0;
-
-  cudaMalloc(&d_challenge, 32); cudaMalloc(&d_miner, 20); cudaMalloc(&d_target, 32); cudaMalloc(&d_hash, 32);
-  cudaMalloc(&d_found, sizeof(unsigned int)); cudaMalloc(&d_nonce, sizeof(uint64_t));
-  cudaMemcpy(d_challenge, h_challenge, 32, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_miner, h_miner, 20, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_target, h_target, 32, cudaMemcpyHostToDevice);
-  cudaMemset(d_found, 0, sizeof(unsigned int));
-
-  int threads = 256;
-  int blocks = prop.multiProcessorCount * 128;
-  if (blocks < 128) blocks = 128;
+  cudaMemcpy(ctx->d_challenge, h_challenge, 32, cudaMemcpyHostToDevice);
+  cudaMemcpy(ctx->d_miner, h_miner, 20, cudaMemcpyHostToDevice);
+  cudaMemcpy(ctx->d_target, h_target, 32, cudaMemcpyHostToDevice);
+  cudaMemset(ctx->d_found, 0, sizeof(unsigned int));
 
   cudaEvent_t ev_start, ev_stop;
-  cudaEventCreate(&ev_start); cudaEventCreate(&ev_stop);
+  cudaEventCreate(&ev_start);
+  cudaEventCreate(&ev_stop);
   cudaEventRecord(ev_start);
-  mine_kernel<<<blocks, threads>>>(d_challenge, d_miner, d_target, start, batch, d_found, d_nonce, d_hash);
-  err = cudaGetLastError();
+  mine_kernel<<<ctx->blocks, ctx->threads>>>(ctx->d_challenge, ctx->d_miner, ctx->d_target, start, batch, ctx->d_found, ctx->d_nonce, ctx->d_hash);
+  cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess) { fprintf(stderr, "kernel launch failed: %s\n", cudaGetErrorString(err)); return 4; }
   err = cudaDeviceSynchronize();
-  cudaEventRecord(ev_stop); cudaEventSynchronize(ev_stop);
-  float ms = 0.0f; cudaEventElapsedTime(&ms, ev_start, ev_stop);
+  cudaEventRecord(ev_stop);
+  cudaEventSynchronize(ev_stop);
+  float ms = 0.0f;
+  cudaEventElapsedTime(&ms, ev_start, ev_stop);
+  cudaEventDestroy(ev_start);
+  cudaEventDestroy(ev_stop);
   if (err != cudaSuccess) { fprintf(stderr, "kernel failed: %s\n", cudaGetErrorString(err)); return 4; }
 
-  cudaMemcpy(&h_found, d_found, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+  cudaMemcpy(&h_found, ctx->d_found, sizeof(unsigned int), cudaMemcpyDeviceToHost);
   if (h_found) {
-    cudaMemcpy(&h_nonce, d_nonce, sizeof(uint64_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_hash, d_hash, 32, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h_nonce, ctx->d_nonce, sizeof(uint64_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_hash, ctx->d_hash, 32, cudaMemcpyDeviceToHost);
   }
   double hps = ms > 0 ? ((double)batch * 1000.0 / (double)ms) : 0.0;
   if (h_found) {
     printf("{\"type\":\"found\",\"nonce\":\"%llu\",\"hash\":\"0x", (unsigned long long)h_nonce);
     print_hex32(h_hash);
-    printf("\",\"tried\":\"%llu\",\"ms\":%.3f,\"hps\":%.0f,\"device\":\"%s\"}\n", (unsigned long long)batch, ms, hps, prop.name);
+    printf("\",\"tried\":\"%llu\",\"ms\":%.3f,\"hps\":%.0f,\"device\":\"%s\"}\n", (unsigned long long)batch, ms, hps, ctx->prop.name);
   } else {
-    printf("{\"type\":\"progress\",\"found\":false,\"tried\":\"%llu\",\"ms\":%.3f,\"hps\":%.0f,\"device\":\"%s\"}\n", (unsigned long long)batch, ms, hps, prop.name);
+    printf("{\"type\":\"progress\",\"found\":false,\"tried\":\"%llu\",\"ms\":%.3f,\"hps\":%.0f,\"device\":\"%s\"}\n", (unsigned long long)batch, ms, hps, ctx->prop.name);
+  }
+  fflush(stdout);
+  return 0;
+}
+
+static int run_server(CudaContext *ctx) {
+  char line[512];
+  char challenge[80], miner[60], target[80], start_s[40], batch_s[40];
+  fprintf(stderr, "slc-cuda persistent worker ready: %s\n", ctx->prop.name);
+  fflush(stderr);
+  while (fgets(line, sizeof(line), stdin)) {
+    if (strncmp(line, "quit", 4) == 0 || strncmp(line, "exit", 4) == 0) break;
+    memset(challenge, 0, sizeof(challenge));
+    memset(miner, 0, sizeof(miner));
+    memset(target, 0, sizeof(target));
+    memset(start_s, 0, sizeof(start_s));
+    memset(batch_s, 0, sizeof(batch_s));
+    int n = sscanf(line, "%79s %59s %79s %39s %39s", challenge, miner, target, start_s, batch_s);
+    if (n != 5) {
+      fprintf(stdout, "{\"type\":\"error\",\"error\":\"invalid server command\"}\n");
+      fflush(stdout);
+      continue;
+    }
+    uint64_t start = strtoull(start_s, NULL, 10);
+    uint64_t batch = strtoull(batch_s, NULL, 10);
+    int rc = run_job(ctx, challenge, miner, target, start, batch);
+    if (rc == 4) return rc;
+  }
+  return 0;
+}
+
+int main(int argc, char **argv) {
+  CudaContext ctx;
+  int init = init_cuda(&ctx);
+  if (init != 0) return init;
+
+  int rc = 0;
+  if (argc == 2 && strcmp(argv[1], "--server") == 0) {
+    rc = run_server(&ctx);
+  } else if (argc >= 6) {
+    uint64_t start = strtoull(argv[4], NULL, 10);
+    uint64_t batch = strtoull(argv[5], NULL, 10);
+    rc = run_job(&ctx, argv[1], argv[2], argv[3], start, batch);
+  } else {
+    fprintf(stderr, "Usage: %s <challenge32> <miner20> <target32> <startNonceU64> <batchSize>\n", argv[0]);
+    fprintf(stderr, "   or: %s --server\n", argv[0]);
+    rc = 2;
   }
 
-  cudaFree(d_challenge); cudaFree(d_miner); cudaFree(d_target); cudaFree(d_hash); cudaFree(d_found); cudaFree(d_nonce);
-  cudaEventDestroy(ev_start); cudaEventDestroy(ev_stop);
-  return 0;
+  free_cuda(&ctx);
+  return rc;
 }

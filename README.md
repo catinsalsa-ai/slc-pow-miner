@@ -103,18 +103,20 @@ MIT
 Set `LOG_EVERY_SEC=5` in `.env` to print one aggregated mining status line every 5 seconds instead of one line per CUDA batch. Increase to `10` for quieter tmux logs.
 
 
-Note: The status line shows `gpu=` for CUDA kernel speed and `loop=` for end-to-end speed including RPC, process startup, and contract reads.
+Note: The status line shows `gpu=` for CUDA kernel speed and `loop=` for end-to-end speed including RPC and contract reads. In v2 persistent mode, process startup overhead is mostly removed after the first round.
 
 ### RTX 5090 max modes
 
 For short CUDA batches, GPU dashboards can show 0% because the kernel finishes in milliseconds. Use larger batch scripts to keep the GPU busy longer:
 
 ```bash
-npm run mine:max    # live mode, GPU=true, CUDA_BATCH=268435456
-npm run mine:turbo  # live mode, GPU=true, CUDA_BATCH=536870912
+npm run mine:max       # live mode, GPU=true, CUDA_BATCH=268435456
+npm run mine:turbo     # live mode, GPU=true, CUDA_BATCH=536870912
+npm run mine:v2        # live mode, persistent CUDA worker, CUDA_BATCH=268435456
+npm run mine:v2:turbo  # live mode, persistent CUDA worker, CUDA_BATCH=536870912
 ```
 
-Start with `mine:max`. If gas/block conditions are stable and the VPS is healthy, try `mine:turbo`. Larger batches make GPU utilization more visible and reduce wrapper/RPC overhead, but they can waste more work if the block/epoch changes mid-batch.
+Start with `mine:v2`. If gas/block conditions are stable and the VPS is healthy, try `mine:v2:turbo`. The v2 mode keeps the CUDA helper alive between rounds, reducing process spawn/init overhead. Larger batches make GPU utilization more visible and reduce wrapper/RPC overhead, but they can waste more work if the block/epoch changes mid-batch.
 
 To show up on the official dashboard, set `REPORT=on` in `.env`; the miner reports every ~60s and once after a successful reveal.
 

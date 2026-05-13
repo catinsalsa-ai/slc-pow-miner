@@ -112,7 +112,7 @@ Use a dedicated burner wallet:
 Put the key only inside `.env` on the VPS:
 
 ```env
-PRIVATE_KEY=0xYOUR_BURNER_PRIVATE_KEY_HERE
+PRIVATE_KEY=[REDACTED]
 ```
 
 ## 4. Read-only status test
@@ -450,16 +450,16 @@ Note: The status line shows `gpu=` for CUDA kernel speed and `loop=` for end-to-
 If `nvidia-smi` shows 0% GPU while logs say `cuda/NVIDIA ...`, the CUDA kernel is probably finishing too fast between dashboard samples. Use a larger batch convenience script:
 
 ```bash
-npm run mine:max
+npm run mine:v2
 ```
 
-This forces `RUN_TX=true GPU=true CUDA_BATCH=268435456 LOG_EVERY_SEC=5`. On RTX 5090 this keeps the kernel running around ~1s per batch instead of a few milliseconds. If stable, try:
+This forces `RUN_TX=true GPU=true CUDA_PERSISTENT=true CUDA_BATCH=268435456 LOG_EVERY_SEC=5`. V2 keeps the CUDA helper alive between rounds, reducing process spawn/init overhead. If stable, try:
 
 ```bash
-npm run mine:turbo
+npm run mine:v2:turbo
 ```
 
-`mine:turbo` uses `CUDA_BATCH=536870912` and can make utilization more visible, but it may waste more work if the block/epoch changes mid-batch. For monitoring:
+`mine:v2:turbo` uses `CUDA_BATCH=536870912` with the persistent worker and can make utilization more visible, but it may waste more work if the block/epoch changes mid-batch. For monitoring:
 
 ```bash
 nvidia-smi dmon -s pucvmet -d 1

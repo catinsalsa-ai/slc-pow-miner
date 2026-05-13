@@ -34,6 +34,7 @@ function printBanner(wallet, budgetLabel, workerLabel) {
   console.log(`Budget      : ${budgetLabel}`);
   console.log(`Gas cap     : ${config.maxGasGwei} gwei | priority ${config.priorityFeeGwei} gwei`);
   console.log(`CUDA batch  : ${config.cudaBatch}`);
+  console.log(`CUDA worker : ${config.cudaPersistent ? 'persistent v2' : 'one-shot v1'}`);
   console.log(`CPU fallback: ${workerLabel}`);
   console.log(`Log every   : ${config.logEverySec}s`);
   console.log(`Dashboard   : ${reportingEnabled(config) ? `ON as ${config.minerName}` : 'OFF (REPORT=off)'}`);
